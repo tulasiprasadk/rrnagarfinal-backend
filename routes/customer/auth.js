@@ -2,23 +2,33 @@
 const express = require("express");
 const router = express.Router();
 const { Customer } = require("../../models");
+const { sendOTP: sendEmailOTP } = require("../../services/emailService");
 
 // TEMP in-memory OTP store
 let otpStore = {};
 
 // =================== REQUEST OTP ===================
 router.post("/request-otp", async (req, res) => {
-  const mobile = req.body.mobile || req.body.phone;
+  const email = (req.body.email || "").trim().toLowerCase();
 
-  if (!mobile) {
-    return res.status(400).json({ error: "Mobile number missing" });
+  if (!email) {
+    return res.status(400).json({ error: "Email is required" });
   }
 
-  const otp = "123456"; // fixed OTP for testing
+  // Generate 6-digit OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const otpExpiry = Date.now() + 10 * 60 * 1000; // 10 minutes
 
-  otpStore[mobile] = otp;
+  otpStore[email] = { otp, expiry: otpExpiry };
 
-  console.log("OTP GENERATED:", mobile, otp);
+  // Send OTP via email (or log in dev)
+  const emailSent = await sendEmailOTP(email, otp);
+
+  if (!emailSent) {
+    console.warn('Email sending failed, but OTP stored for development');
+  }
+
+  console.log("OTP GENERATED (email):", email, otp);
 
   return res.json({ success: true });
 });
@@ -32,7 +42,7 @@ router.get("/me", (req, res) => {
   const customer = req.customer || {
     id: req.session.customerId,
     name: req.session.customerName || "",
-    mobile: req.session.customerMobile || ""
+    email: req.session.customerEmail || ""
   };
 
   return res.json({ loggedIn: true, customer });
@@ -40,32 +50,48 @@ router.get("/me", (req, res) => {
 
 // =================== VERIFY OTP ===================
 router.post("/verify-otp", async (req, res) => {
-  const mobile = req.body.mobile || req.body.phone;
+  const email = (req.body.email || "").trim().toLowerCase();
   const otp = req.body.otp;
 
   console.log("VERIFY OTP BODY:", req.body);
   console.log("OTP STORED:", otpStore);
 
-  if (!mobile) {
-    return res.status(400).json({ error: "Mobile number missing" });
+  if (!email) {
+    return res.status(400).json({ error: "Email is required" });
   }
 
-  if (otpStore[mobile] !== otp) {
+  const storedOtpData = otpStore[email];
+
+  if (!storedOtpData) {
+    return res.status(400).json({ error: "OTP not found. Please request new OTP." });
+  }
+
+  // Check if OTP expired
+  if (Date.now() > storedOtpData.expiry) {
+    delete otpStore[email];
+    return res.status(400).json({ error: "OTP expired. Please request new OTP." });
+  }
+
+  if (storedOtpData.otp !== otp) {
     return res.status(400).json({ error: "Invalid OTP" });
   }
 
   // Find or create customer
-  let customer = await Customer.findOne({ where: { mobile } });
+  let customer = await Customer.findOne({ where: { email } });
   let isNewUser = false;
 
   if (!customer) {
-    customer = await Customer.create({ mobile });
+    // mobile is non-null in existing DB schema; use email as fallback
+    customer = await Customer.create({ email, mobile: email });
     isNewUser = true;
   }
 
   // Save session
   req.session.customerId = customer.id;
-  req.session.customerMobile = customer.mobile;
+  req.session.customerEmail = customer.email;
+
+  // Clear OTP after successful verification
+  delete otpStore[email];
 
   console.log("SESSION SET:", req.session.customerId);
 

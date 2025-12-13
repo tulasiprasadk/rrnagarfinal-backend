@@ -1,25 +1,52 @@
 const express = require('express');
 const router = express.Router();
-const { Category, Ad, AnalyticsVisit, Product } = require('../models');
+const { Category, Ad, AnalyticsVisit, Product, Admin } = require('../models');
 const { translateToKannada, translateBatch } = require('../services/translator');
+const bcrypt = require('bcrypt');
 
 // Admin Login
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Hardcoded admin credentials for now
-    // TODO: Move to database with hashed passwords
-    if (email === 'admin@rrnagar.com' && password === 'admin123') {
-      req.session.adminId = 1;
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Email and password required' });
+    }
+
+    // Find admin by email
+    const admin = await Admin.findOne({ where: { email } });
+
+    if (!admin) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    // Check if admin is active
+    if (!admin.isActive) {
+      return res.status(403).json({ message: 'Account is deactivated' });
+    }
+
+    // Verify password
+    const isValidPassword = await bcrypt.compare(password, admin.password);
+
+    if (!isValidPassword) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    // Update last login
+    await admin.update({ lastLogin: new Date() });
+
+    // Set session
+      req.session.adminId = admin.id;
       return res.json({ 
         success: true, 
         token: 'admin-token-' + Date.now(),
-        admin: { id: 1, email: email, name: 'Admin' }
+        admin: { 
+          id: admin.id, 
+          email: admin.email, 
+          name: admin.name,
+          role: admin.role
+        }
       });
-    }
-
-    res.status(401).json({ message: 'Invalid credentials' });
   } catch (err) {
     console.error("Admin login error:", err);
     res.status(500).json({ message: 'Server error' });

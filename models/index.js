@@ -2,6 +2,7 @@ const sequelize = require('../config/database');
 const { DataTypes } = require('sequelize');
 
 // Load Models
+const Admin = require('./Admin')(sequelize, DataTypes);
 const Ad = require('./Ad')(sequelize, DataTypes);
 const Supplier = require('./Supplier')(sequelize, DataTypes);
 const Category = require('./Category')(sequelize, DataTypes);
@@ -78,6 +79,7 @@ Address.belongsTo(Customer);          // ✅ ADDED
 =========================== */
 module.exports = {
   sequelize,
+    Admin,
   Ad,
   Supplier,
   Category,

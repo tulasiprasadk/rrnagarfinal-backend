@@ -7,6 +7,7 @@ const bcrypt = require('bcrypt');
 const { Supplier, Product, Order } = require('../models');
 const { sendNotificationToAdmin } = require('../utils/notify');
 const adminNotify = require('../services/adminNotify');
+const { sendOTP: sendOTPSMS } = require('../services/smsService');
 
 // Configure multer for KYC document uploads
 const storage = multer.diskStorage({
@@ -92,10 +93,21 @@ router.post('/send-otp', async (req, res) => {
 
     await supplier.update({ otp, otpExpiry });
 
-    // TODO: Send OTP via SMS/WhatsApp
+    // Send OTP via SMS
+    const smsSent = await sendOTPSMS(phone, otp);
+
+    if (!smsSent) {
+      console.warn('SMS sending failed, but OTP stored for development');
+    }
+
     console.log(`OTP for ${phone}: ${otp}`);
 
-    res.json({ success: true, message: "OTP sent to your phone", otp }); // Remove otp in production
+    res.json({ 
+      success: true, 
+      message: "OTP sent to your phone",
+      // Only include OTP in response for development mode
+      ...(process.env.NODE_ENV !== 'production' && { otp })
+    });
   } catch (err) {
     console.error("Send OTP error:", err);
     res.status(500).json({ error: "Server error" });

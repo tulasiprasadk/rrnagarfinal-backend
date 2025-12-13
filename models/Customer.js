@@ -4,7 +4,7 @@ module.exports = (sequelize, DataTypes) => {
     {
       mobile: {
         type: DataTypes.STRING,
-        allowNull: false,
+        allowNull: true,
         unique: true,
       },
       name: {
@@ -12,6 +12,8 @@ module.exports = (sequelize, DataTypes) => {
       },
       email: {
         type: DataTypes.STRING,
+        allowNull: false,
+        unique: true,
       }
     },
     {
