@@ -103,6 +103,7 @@ app.use("/api/customer/profile", customerProfileRoutes);
 app.use("/api/customer/address", require("./routes/customer/address"));
 app.use("/api/customer/dashboard-stats", require("./routes/customer/dashboard-stats"));
 app.use("/api/customer/payment", require("./routes/customer/payment"));
+app.use("/api/customer/saved-suppliers", require("./routes/customer/saved-suppliers"));
 
 // ---- ADMIN ----
 app.use("/api/admin/auth", require("./routes/admin/auth"));

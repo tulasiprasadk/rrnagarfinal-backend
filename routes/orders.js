@@ -306,5 +306,147 @@ router.post("/submit-payment", upload.single("paymentScreenshot"), async (req, r
   }
 });
 
+/* ===========================================================
+   GET INVOICE (PDF Download)
+=========================================================== */
+router.get("/:id/invoice", requireLogin, async (req, res) => {
+  try {
+    const order = await Order.findOne({
+      where: {
+        id: req.params.id,
+        CustomerId: req.session.customerId
+      },
+      include: [
+        { model: Product },
+        { model: Supplier },
+        {
+          model: Address,
+          attributes: ["name", "phone", "addressLine", "city", "state", "pincode"]
+        }
+      ]
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    // For now, generate a simple text/HTML invoice
+    // In production, you'd use a library like pdfkit or puppeteer
+    const invoiceHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; color: #333; }
+          .container { max-width: 800px; margin: 0 auto; border: 1px solid #ddd; padding: 30px; }
+          .header { border-bottom: 3px solid #c8102e; padding-bottom: 20px; margin-bottom: 30px; }
+          .company-name { font-size: 28px; font-weight: bold; color: #c8102e; }
+          .invoice-title { font-size: 24px; margin: 20px 0 0 0; }
+          .invoice-info { display: flex; justify-content: space-between; margin: 20px 0; }
+          .info-section { flex: 1; }
+          .info-section label { font-weight: bold; color: #666; }
+          .info-section p { margin: 5px 0; }
+          .order-items { width: 100%; border-collapse: collapse; margin: 30px 0; }
+          .order-items th { background: #ffd500; padding: 10px; text-align: left; font-weight: bold; }
+          .order-items td { padding: 12px; border-bottom: 1px solid #eee; }
+          .totals { float: right; width: 300px; margin: 30px 0; }
+          .total-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
+          .total-row.final { border-bottom: 3px solid #c8102e; font-weight: bold; font-size: 16px; }
+          .address-section { background: #f9f9f9; padding: 15px; margin: 30px 0; border-radius: 5px; }
+          .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; color: #999; font-size: 12px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <div class="company-name">RR Nagar</div>
+            <h2 class="invoice-title">Invoice</h2>
+          </div>
+
+          <div class="invoice-info">
+            <div class="info-section">
+              <label>Invoice #:</label>
+              <p>${order.id}</p>
+              <label>Date:</label>
+              <p>${new Date(order.createdAt).toLocaleDateString('en-IN')}</p>
+              <label>Status:</label>
+              <p style="color: #c8102e; font-weight: bold;">${order.status.toUpperCase()}</p>
+            </div>
+            <div class="info-section">
+              <label>Payment Status:</label>
+              <p style="color: #c8102e; font-weight: bold;">${order.paymentStatus.toUpperCase()}</p>
+              <label>Order Type:</label>
+              <p>${order.type ? order.type.charAt(0).toUpperCase() + order.type.slice(1) : 'Delivery'}</p>
+            </div>
+          </div>
+
+          <div class="address-section">
+            <label style="font-weight: bold; display: block; margin-bottom: 10px;">Delivery Address:</label>
+            <p><strong>${order.customerName || 'Customer'}</strong></p>
+            <p>${order.customerAddress || (order.Address ? 
+              order.Address.addressLine + ', ' + order.Address.city + ', ' + order.Address.state + ' - ' + order.Address.pincode
+              : 'Address not provided')}</p>
+            <p>📞 ${order.customerPhone || 'Phone not provided'}</p>
+          </div>
+
+          <table class="order-items">
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Supplier</th>
+                <th>Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <strong>${order.Product ? order.Product.title || order.Product.name : 'Product'}</strong>
+                </td>
+                <td>${order.Supplier ? order.Supplier.shopName : 'Supplier'}</td>
+                <td>₹${order.totalAmount}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="totals">
+            <div class="total-row">
+              <span>Subtotal:</span>
+              <span>₹${order.totalAmount - (order.platformFee || 0)}</span>
+            </div>
+            ${order.platformFee ? `
+            <div class="total-row">
+              <span>Platform Fee:</span>
+              <span>₹${order.platformFee}</span>
+            </div>
+            ` : ''}
+            <div class="total-row final">
+              <span>Total Amount:</span>
+              <span>₹${order.totalAmount}</span>
+            </div>
+          </div>
+
+          <div style="clear: both;"></div>
+
+          <div class="footer">
+            <p>Thank you for your business!</p>
+            <p>RR Nagar - Your trusted local marketplace</p>
+            <p>For support, contact us at support@rrnagar.com</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    // Send as HTML (for now, user can print to PDF)
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="Invoice-${order.id}.html"`);
+    res.send(invoiceHTML);
+
+  } catch (err) {
+    console.error("INVOICE GENERATION ERROR:", err);
+    res.status(500).json({ error: "Failed to generate invoice" });
+  }
+});
 
 module.exports = router;
