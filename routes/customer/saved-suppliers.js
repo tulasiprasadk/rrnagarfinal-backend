@@ -26,7 +26,7 @@ router.get("/", requireLogin, async (req, res) => {
       attributes: ["SupplierId"],
       include: [{
         model: Supplier,
-        attributes: ["id", "shopName", "phoneNumber", "location", "email", "rating"],
+        attributes: ["id", "name", "phone", "address", "email"],
       }],
       raw: false,
       subQuery: false
@@ -36,7 +36,14 @@ router.get("/", requireLogin, async (req, res) => {
     const supplierMap = {};
     orders.forEach(order => {
       if (order.Supplier && !supplierMap[order.Supplier.id]) {
-        supplierMap[order.Supplier.id] = order.Supplier;
+        supplierMap[order.Supplier.id] = {
+          id: order.Supplier.id,
+          shopName: order.Supplier.name || order.Supplier.businessName,
+          phoneNumber: order.Supplier.phone,
+          location: order.Supplier.address,
+          email: order.Supplier.email,
+          rating: 4.5 // default rating if not available
+        };
       }
     });
 
@@ -50,3 +57,4 @@ router.get("/", requireLogin, async (req, res) => {
 });
 
 module.exports = router;
+
