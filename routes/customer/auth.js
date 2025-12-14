@@ -25,17 +25,31 @@ router.post("/request-email-otp", async (req, res) => {
   }
 
   try {
+    // Check if input is email or username (phone)
+    let customer;
+    
+    if (email.includes('@')) {
+      // It's an email
+      customer = await Customer.findOne({ where: { email } });
+    } else {
+      // It's a username (phone number)
+      customer = await Customer.findOne({ where: { username: email } });
+    }
+
+    // Determine the email to send OTP to
+    const targetEmail = customer ? customer.email : email;
+
     // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     
-    // Store with 10 minute expiry
+    // Store with 10 minute expiry (use normalized email/username as key)
     const expiresAt = Date.now() + 10 * 60 * 1000;
-    otpStore[email] = { otp, expiresAt };
+    otpStore[targetEmail] = { otp, expiresAt, inputIdentifier: email };
 
     // Send OTP via email
-    await sendOTP(email, otp);
+    await sendOTP(targetEmail, otp);
 
-    console.log("📧 OTP SENT:", email, otp);
+    console.log("📧 OTP SENT:", targetEmail, otp);
 
     res.json({
       success: true,
@@ -58,30 +72,58 @@ router.post("/verify-email-otp", async (req, res) => {
     return res.status(400).json({ error: "Email and OTP required" });
   }
 
-  // Check if OTP exists and is valid
-  const stored = otpStore[email];
-  
-  if (!stored || stored.otp !== otp) {
-    return res.status(401).json({ error: "Invalid OTP" });
-  }
-
-  if (Date.now() > stored.expiresAt) {
-    delete otpStore[email];
-    return res.status(401).json({ error: "OTP expired" });
-  }
-
   try {
-    // OTP valid → delete it
-    delete otpStore[email];
+    // Find stored OTP - check both email and username
+    let stored;
+    let actualEmail = email;
+    
+    // Check if OTP was sent to this email directly
+    if (otpStore[email]) {
+      stored = otpStore[email];
+    } else {
+      // Search for OTP by inputIdentifier
+      for (const [key, value] of Object.entries(otpStore)) {
+        if (value.inputIdentifier === email) {
+          stored = value;
+          actualEmail = key;
+          break;
+        }
+      }
+    }
+    
+    if (!stored || stored.otp !== otp) {
+      return res.status(401).json({ error: "Invalid OTP" });
+    }
 
-    // Check if customer exists
-    let customer = await Customer.findOne({ where: { email } });
+    if (Date.now() > stored.expiresAt) {
+      delete otpStore[actualEmail];
+      return res.status(401).json({ error: "OTP expired" });
+    }
+
+    // OTP valid → delete it
+    delete otpStore[actualEmail];
+
+    // Find customer by email or username
+    let customer;
+    if (email.includes('@')) {
+      customer = await Customer.findOne({ where: { email } });
+    } else {
+      customer = await Customer.findOne({ where: { username: email } });
+      if (customer) {
+        actualEmail = customer.email;
+      }
+    }
+
     let isNewUser = false;
 
     if (!customer) {
-      // Create new customer
-      customer = await Customer.create({ email });
-      isNewUser = true;
+      // Create new customer (only if email was provided)
+      if (email.includes('@')) {
+        customer = await Customer.create({ email: actualEmail });
+        isNewUser = true;
+      } else {
+        return res.status(404).json({ error: "User not found" });
+      }
     }
 
     // Save customer ID in session

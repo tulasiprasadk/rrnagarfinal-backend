@@ -3,6 +3,8 @@
  * RR Nagar Backend – FULL FILE
  */
 
+require('dotenv').config();
+
 const express = require("express");
 const session = require("express-session");
 const cors = require("cors");
@@ -103,12 +105,14 @@ app.use("/api/customer/dashboard-stats", require("./routes/customer/dashboard-st
 app.use("/api/customer/payment", require("./routes/customer/payment"));
 
 // ---- ADMIN ----
+app.use("/api/admin/auth", require("./routes/admin/auth"));
 app.use("/api/admin", require("./routes/admin"));
 app.use("/api/admin/orders", require("./routes/admin/orders"));
 app.use("/api/admin/notifications", require("./routes/admin/notifications"));
 app.use("/api/admin/payments", require("./routes/admin-payments"));
 
 // ---- SUPPLIER ----
+app.use("/api/supplier/auth", require("./routes/supplier/auth"));
 app.use("/api/supplier/orders", require("./routes/supplier/orders"));
 app.use("/api/suppliers", require("./routes/suppliers"));
 
@@ -141,7 +145,7 @@ let server = null;
 let isShuttingDown = false;
 
 sequelize
-  .sync()
+  .sync({ alter: true })
   .then(() => {
     console.log("📦 Database synced successfully!");
 

@@ -35,6 +35,17 @@ router.put("/", async (req, res) => {
       return res.status(404).json({ error: "Customer not found" });
     }
 
+    // If updating username, check if it's unique
+    if (req.body.username && req.body.username !== customer.username) {
+      const existingUser = await Customer.findOne({ 
+        where: { username: req.body.username } 
+      });
+      
+      if (existingUser) {
+        return res.status(400).json({ error: "Username already taken" });
+      }
+    }
+
     await customer.update(req.body);
 
     res.json({ success: true, customer });
