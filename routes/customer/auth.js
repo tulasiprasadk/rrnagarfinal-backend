@@ -5,62 +5,98 @@
 
 const express = require("express");
 const router = express.Router();
+const { Customer } = require("../../models");
+const { sendOTP } = require("../../services/emailService");
 
 /* =====================================================
    TEMP IN-MEMORY OTP STORE (DEV ONLY)
    ===================================================== */
-const otpStore = {};
+const otpStore = {}; // Format: { email: { otp: "123456", expiresAt: timestamp } }
 
 /* =====================================================
    REQUEST EMAIL OTP
    POST /api/auth/request-email-otp
    ===================================================== */
-router.post("/request-email-otp", (req, res) => {
+router.post("/request-email-otp", async (req, res) => {
   const { email } = req.body;
 
   if (!email) {
     return res.status(400).json({ error: "Email is required" });
   }
 
-  // Fixed OTP for development
-  const otp = "123456";
+  try {
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Store with 10 minute expiry
+    const expiresAt = Date.now() + 10 * 60 * 1000;
+    otpStore[email] = { otp, expiresAt };
 
-  otpStore[email] = otp;
+    // Send OTP via email
+    await sendOTP(email, otp);
 
-  console.log("📧 OTP GENERATED:", email, otp);
+    console.log("📧 OTP SENT:", email, otp);
 
-  // TODO: send real email later
-  res.json({
-    success: true,
-    message: "OTP sent to email",
-  });
+    res.json({
+      success: true,
+      message: "OTP sent to email",
+    });
+  } catch (err) {
+    console.error("OTP Send Error:", err);
+    res.status(500).json({ error: "Failed to send OTP" });
+  }
 });
 
 /* =====================================================
    VERIFY EMAIL OTP
    POST /api/auth/verify-email-otp
    ===================================================== */
-router.post("/verify-email-otp", (req, res) => {
+router.post("/verify-email-otp", async (req, res) => {
   const { email, otp } = req.body;
 
   if (!email || !otp) {
     return res.status(400).json({ error: "Email and OTP required" });
   }
 
-  if (otpStore[email] !== otp) {
+  // Check if OTP exists and is valid
+  const stored = otpStore[email];
+  
+  if (!stored || stored.otp !== otp) {
     return res.status(401).json({ error: "Invalid OTP" });
   }
 
-  // OTP valid → create session
-  delete otpStore[email];
+  if (Date.now() > stored.expiresAt) {
+    delete otpStore[email];
+    return res.status(401).json({ error: "OTP expired" });
+  }
 
-  // Save customer identity in session
-  req.session.customerId = email; // later replace with real customer ID
+  try {
+    // OTP valid → delete it
+    delete otpStore[email];
 
-  res.json({
-    success: true,
-    message: "OTP verified, logged in",
-  });
+    // Check if customer exists
+    let customer = await Customer.findOne({ where: { email } });
+    let isNewUser = false;
+
+    if (!customer) {
+      // Create new customer
+      customer = await Customer.create({ email });
+      isNewUser = true;
+    }
+
+    // Save customer ID in session
+    req.session.customerId = customer.id;
+
+    res.json({
+      success: true,
+      message: "OTP verified, logged in",
+      isNewUser,
+      customerId: customer.id,
+    });
+  } catch (err) {
+    console.error("Verify OTP Error:", err);
+    res.status(500).json({ error: "Verification failed" });
+  }
 });
 
 /* =====================================================
