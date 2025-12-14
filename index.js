@@ -17,18 +17,23 @@ const customerProfileRoutes = require("./routes/customer/profile");
 const app = express();
 
 /* =============================
-   CORS CONFIG (FIXED)
+   CORS CONFIG (CONFIGURABLE)
 ============================= */
-const allowedOrigins = [
-  // Local development
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "http://127.0.0.1:5173",
-  "http://127.0.0.1:5174",
+const allowedOrigins = (process.env.CORS_ORIGINS
+  || [
+    // Local development
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
 
-  // Production frontend (GitHub Pages)
-  "https://tulasiprasadk.github.io",
-];
+    // Production frontend (GitHub Pages)
+    "https://tulasiprasadk.github.io",
+  ].join(',')
+)
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 app.use(
   cors({
