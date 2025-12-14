@@ -1,3 +1,8 @@
+/**
+ * backend/index.js
+ * RR Nagar Backend – FULL FILE
+ */
+
 const express = require("express");
 const session = require("express-session");
 const cors = require("cors");
@@ -9,84 +14,107 @@ const customerProfileRoutes = require("./routes/customer/profile");
 
 const app = express();
 
-// ------------------ CORS ------------------
-// Allow Vite dev servers on common localhost ports (5173/5174)
+/* =============================
+   CORS CONFIG (FIXED)
+============================= */
 const allowedOrigins = [
+  // Local development
   "http://localhost:5173",
   "http://localhost:5174",
   "http://127.0.0.1:5173",
   "http://127.0.0.1:5174",
+
+  // Production frontend (GitHub Pages)
+  "https://tulasiprasadk.github.io",
 ];
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin) return callback(null, true); // allow curl/postman
-      if (allowedOrigins.includes(origin)) return callback(null, true);
-      // Allow any localhost:51xx dev port just in case Vite picks a new one
-      if (/^http:\/\/(localhost|127\.0\.0\.1):51\d{2}$/.test(origin)) {
+      // Allow curl, Postman, server-to-server
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
+
+      console.warn("❌ Blocked by CORS:", origin);
       return callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
   })
 );
 
-// ------------------ MIDDLEWARES ------------------
-app.use(bodyParser.json({ charset: 'utf-8' }));
-app.use(bodyParser.urlencoded({ extended: true, charset: 'utf-8' }));
+/* =============================
+   BODY PARSERS
+============================= */
+app.use(bodyParser.json({ charset: "utf-8" }));
+app.use(bodyParser.urlencoded({ extended: true, charset: "utf-8" }));
 
-// Set default charset for all responses
+// Force UTF-8 JSON responses
 app.use((req, res, next) => {
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
   next();
 });
 
-// Session debugging middleware
-app.use((req, res, next) => {
-  console.log(`📨 ${req.method} ${req.path} | Session ID: ${req.sessionID || 'none'} | Customer: ${req.session?.customerId || 'none'}`);
-  next();
-});
-
+/* =============================
+   SESSION SETUP
+============================= */
 app.use(
   session({
     secret: "rrnagar-secret-key",
     resave: false,
-    saveUninitialized: false, // Don't create session until something is stored
-    name: 'rrnagar.sid', // Custom cookie name
+    saveUninitialized: false,
+    name: "rrnagar.sid",
     cookie: {
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       httpOnly: true,
-      secure: false, // Set to false for localhost
-      sameSite: 'lax',
-      path: '/'
-    }
+      secure: false, // true only if HTTPS + same domain
+      sameSite: "lax",
+      path: "/",
+    },
   })
 );
 
-// ------------------ ROUTES ------------------
-// Customer routes
+/* =============================
+   SESSION DEBUG LOG
+============================= */
+app.use((req, res, next) => {
+  console.log(
+    `📨 ${req.method} ${req.path} | Session: ${req.sessionID || "none"} | Customer: ${req.session?.customerId || "none"}`
+  );
+  next();
+});
+
+/* =============================
+   ROUTES
+============================= */
+
+// Health check
+app.get("/", (req, res) => {
+  res.send("RR Nagar Backend Running");
+});
+
+// ---- CUSTOMER ----
 app.use("/api/auth", customerAuthRoutes);
 app.use("/api/customer/profile", customerProfileRoutes);
 app.use("/api/customer/address", require("./routes/customer/address"));
 app.use("/api/customer/dashboard-stats", require("./routes/customer/dashboard-stats"));
 app.use("/api/customer/payment", require("./routes/customer/payment"));
 
-// Admin routes
+// ---- ADMIN ----
 app.use("/api/admin", require("./routes/admin"));
 app.use("/api/admin/orders", require("./routes/admin/orders"));
 app.use("/api/admin/notifications", require("./routes/admin/notifications"));
 app.use("/api/admin/payments", require("./routes/admin-payments"));
 
-// Supplier routes
+// ---- SUPPLIER ----
 app.use("/api/supplier/orders", require("./routes/supplier/orders"));
 app.use("/api/suppliers", require("./routes/suppliers"));
 
-// General routes
+// ---- GENERAL ----
 app.use("/api/products", require("./routes/products"));
 app.use("/api/categories", require("./routes/categories"));
-// app.use("/api/varieties", require("./routes/varieties")); // Temporarily disabled
 app.use("/api/orders", require("./routes/orders"));
 app.use("/api/shops", require("./routes/shops"));
 app.use("/api/stock", require("./routes/stock"));
@@ -95,35 +123,33 @@ app.use("/api/analytics", require("./routes/analytics"));
 app.use("/api/upload", require("./routes/upload"));
 app.use("/api", require("./routes/partner"));
 
-// Static files
+// Static uploads
 app.use("/uploads", express.static("uploads"));
 
-// Graceful shutdown handlers
-let server = null;
-let isShuttingDown = false;
-
-// ---- Rest of file continues below ----
-
-// ... middleware and routes ...
-
-// Global error handler
+/* =============================
+   GLOBAL ERROR HANDLER
+============================= */
 app.use((err, req, res, next) => {
   console.error("❌ Server error:", err);
   res.status(500).json({ error: err.message });
 });
 
-// ------------------ DB SYNC ------------------
+/* =============================
+   SERVER + DB START
+============================= */
+let server = null;
+let isShuttingDown = false;
+
 sequelize
-  .sync() // avoid alter to prevent FK issues on dev data
+  .sync()
   .then(() => {
     console.log("📦 Database synced successfully!");
-    
-    // Start server after DB is ready
+
     server = app.listen(4000, () => {
       console.log("🚀 RR Nagar backend running on http://localhost:4000");
     });
-    
-    server.on('error', (err) => {
+
+    server.on("error", (err) => {
       console.error("❌ Server error:", err);
     });
   })
@@ -132,37 +158,34 @@ sequelize
     process.exit(1);
   });
 
-// Handle uncaught errors (logging only during development)
-process.on('uncaughtException', (err) => {
+/* =============================
+   PROCESS SAFETY
+============================= */
+process.on("uncaughtException", (err) => {
   console.error("❌ Uncaught Exception:", err);
-  // Don't exit in development - just log
-  // process.exit(1);
 });
 
-process.on('unhandledRejection', (err) => {
+process.on("unhandledRejection", (err) => {
   console.error("❌ Unhandled Rejection:", err);
-  // Don't exit in development - just log
-  // process.exit(1);
 });
 
-process.on('SIGINT', () => {
-  if (isShuttingDown) return; // Prevent multiple shutdowns
+process.on("SIGINT", () => {
+  if (isShuttingDown) return;
   isShuttingDown = true;
-  
-  console.log('\n👋 Shutting down gracefully...');
+
+  console.log("\n👋 Shutting down gracefully...");
   if (server) {
     server.close(() => {
-      console.log('Server closed');
+      console.log("Server closed");
       process.exit(0);
     });
     setTimeout(() => {
-      console.log('Force exiting...');
+      console.log("Force exiting...");
       process.exit(0);
-    }, 5000); // Wait 5 seconds before forced exit
+    }, 5000);
   } else {
     process.exit(0);
   }
 });
 
-console.log('✅ Server process started. Press Ctrl+C to stop.');
-
+console.log("✅ Server process started. Press Ctrl+C to stop.");
