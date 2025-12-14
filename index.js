@@ -16,6 +16,14 @@ const customerProfileRoutes = require("./routes/customer/profile");
 
 const app = express();
 
+// Determine environment for security-sensitive settings
+const isProd = process.env.NODE_ENV === 'production';
+
+// Behind proxies (Render/Heroku/Vercel), trust proxy so secure cookies work
+if (isProd) {
+  app.set('trust proxy', 1);
+}
+
 /* =============================
    CORS CONFIG (CONFIGURABLE)
 ============================= */
@@ -69,15 +77,17 @@ app.use((req, res, next) => {
 ============================= */
 app.use(
   session({
-    secret: "rrnagar-secret-key",
+    secret: process.env.SESSION_SECRET || "rrnagar-secret-key",
     resave: false,
     saveUninitialized: false,
     name: "rrnagar.sid",
     cookie: {
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       httpOnly: true,
-      secure: false, // true only if HTTPS + same domain
-      sameSite: "lax",
+      // In production when frontend and backend are on different domains,
+      // cross-site cookies require SameSite=None and Secure=true.
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
       path: "/",
     },
   })
@@ -149,14 +159,15 @@ app.use((err, req, res, next) => {
 ============================= */
 let server = null;
 let isShuttingDown = false;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4000;
 
 sequelize
   .sync({ alter: true })
   .then(() => {
     console.log("📦 Database synced successfully!");
 
-    server = app.listen(4000, () => {
-      console.log("🚀 RR Nagar backend running on http://localhost:4000");
+    server = app.listen(PORT, () => {
+      console.log(`🚀 RR Nagar backend running on port ${PORT}`);
     });
 
     server.on("error", (err) => {
