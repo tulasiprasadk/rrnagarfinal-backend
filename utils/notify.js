@@ -17,7 +17,8 @@ const twilioClient = (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_
 
 async function sendEmail(to, subject, html) {
   if (!transporter) return;
-  await transporter.sendMail({ from: process.env.SMTP_USER, to, subject, html });
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  await transporter.sendMail({ from, to, subject, html });
 }
 
 async function sendSMS(to, message) {
