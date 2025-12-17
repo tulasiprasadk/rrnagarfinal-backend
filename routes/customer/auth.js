@@ -1,6 +1,7 @@
 /**
  * backend/routes/customer/auth.js
- * Customer Authentication Routes (Email OTP + Session)
+ * Customer Authentication Routes
+ * ✅ FIXED: OTP stored in DB (no in-memory store)
  */
 
 const express = require("express");
@@ -9,47 +10,49 @@ const { Customer } = require("../../models");
 const { sendOTP } = require("../../services/emailService");
 
 /* =====================================================
-   TEMP IN-MEMORY OTP STORE (DEV ONLY)
-   ===================================================== */
-const otpStore = {}; // Format: { email: { otp: "123456", expiresAt: timestamp } }
-
-/* =====================================================
    REQUEST EMAIL OTP
    POST /api/auth/request-email-otp
-   ===================================================== */
+===================================================== */
 router.post("/request-email-otp", async (req, res) => {
   const { email } = req.body;
 
   if (!email) {
-    return res.status(400).json({ error: "Email is required" });
+    return res.status(400).json({ error: "Email or username is required" });
   }
 
   try {
-    // Check if input is email or username (phone)
     let customer;
-    
-    if (email.includes('@')) {
-      // It's an email
+
+    // Email login OR username (phone)
+    if (email.includes("@")) {
       customer = await Customer.findOne({ where: { email } });
+
+      // Auto-create customer if not exists (email flow)
+      if (!customer) {
+        customer = await Customer.create({ email });
+      }
     } else {
-      // It's a username (phone number)
       customer = await Customer.findOne({ where: { username: email } });
     }
 
-    // Determine the email to send OTP to
-    const targetEmail = customer ? customer.email : email;
+    if (!customer || !customer.email) {
+      return res.status(404).json({ error: "User not found" });
+    }
 
     // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    
-    // Store with 10 minute expiry (use normalized email/username as key)
-    const expiresAt = Date.now() + 10 * 60 * 1000;
-    otpStore[targetEmail] = { otp, expiresAt, inputIdentifier: email };
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-    // Send OTP via email
-    await sendOTP(targetEmail, otp);
+    // ✅ SAVE OTP TO DATABASE
+    await customer.update({
+      otpCode: otp,
+      otpExpiresAt: expiresAt,
+    });
 
-    console.log("📧 OTP SENT:", targetEmail, otp);
+    // Send OTP email
+    await sendOTP(customer.email, otp);
+
+    console.log("📧 OTP SENT:", customer.email, otp);
 
     res.json({
       success: true,
@@ -64,7 +67,7 @@ router.post("/request-email-otp", async (req, res) => {
 /* =====================================================
    VERIFY EMAIL OTP
    POST /api/auth/verify-email-otp
-   ===================================================== */
+===================================================== */
 router.post("/verify-email-otp", async (req, res) => {
   const { email, otp } = req.body;
 
@@ -73,66 +76,38 @@ router.post("/verify-email-otp", async (req, res) => {
   }
 
   try {
-    // Find stored OTP - check both email and username
-    let stored;
-    let actualEmail = email;
-    
-    // Check if OTP was sent to this email directly
-    if (otpStore[email]) {
-      stored = otpStore[email];
-    } else {
-      // Search for OTP by inputIdentifier
-      for (const [key, value] of Object.entries(otpStore)) {
-        if (value.inputIdentifier === email) {
-          stored = value;
-          actualEmail = key;
-          break;
-        }
-      }
-    }
-    
-    if (!stored || stored.otp !== otp) {
-      return res.status(401).json({ error: "Invalid OTP" });
-    }
-
-    if (Date.now() > stored.expiresAt) {
-      delete otpStore[actualEmail];
-      return res.status(401).json({ error: "OTP expired" });
-    }
-
-    // OTP valid → delete it
-    delete otpStore[actualEmail];
-
-    // Find customer by email or username
     let customer;
-    if (email.includes('@')) {
+
+    if (email.includes("@")) {
       customer = await Customer.findOne({ where: { email } });
     } else {
       customer = await Customer.findOne({ where: { username: email } });
-      if (customer) {
-        actualEmail = customer.email;
-      }
     }
 
-    let isNewUser = false;
-
-    if (!customer) {
-      // Create new customer (only if email was provided)
-      if (email.includes('@')) {
-        customer = await Customer.create({ email: actualEmail });
-        isNewUser = true;
-      } else {
-        return res.status(404).json({ error: "User not found" });
-      }
+    if (!customer || !customer.otpCode) {
+      return res.status(401).json({ error: "Invalid OTP" });
     }
 
-    // Save customer ID in session
+    // Validate OTP + expiry
+    if (
+      customer.otpCode !== otp ||
+      new Date() > customer.otpExpiresAt
+    ) {
+      return res.status(401).json({ error: "Invalid or expired OTP" });
+    }
+
+    // ✅ CLEAR OTP AFTER SUCCESS
+    await customer.update({
+      otpCode: null,
+      otpExpiresAt: null,
+    });
+
+    // Save login session
     req.session.customerId = customer.id;
 
     res.json({
       success: true,
       message: "OTP verified, logged in",
-      isNewUser,
       customerId: customer.id,
     });
   } catch (err) {
@@ -144,12 +119,10 @@ router.post("/verify-email-otp", async (req, res) => {
 /* =====================================================
    CHECK LOGIN STATUS
    GET /api/auth/me
-   ===================================================== */
+===================================================== */
 router.get("/me", (req, res) => {
-  if (!req.session || !req.session.customerId) {
-    return res.status(401).json({
-      loggedIn: false,
-    });
+  if (!req.session?.customerId) {
+    return res.status(401).json({ loggedIn: false });
   }
 
   res.json({
@@ -161,13 +134,9 @@ router.get("/me", (req, res) => {
 /* =====================================================
    LOGOUT
    POST /api/auth/logout
-   ===================================================== */
+===================================================== */
 router.post("/logout", (req, res) => {
-  req.session.destroy((err) => {
-    if (err) {
-      return res.status(500).json({ error: "Logout failed" });
-    }
-
+  req.session.destroy(() => {
     res.clearCookie("rrnagar.sid");
     res.json({ success: true });
   });

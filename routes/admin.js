@@ -1,4 +1,46 @@
+
 const express = require('express');
+const router = express.Router();
+
+// Middleware to check if current admin is super admin
+function requireSuperAdmin(req, res, next) {
+  if (!req.session || !req.session.adminId) {
+    return res.status(401).json({ error: 'Not logged in' });
+  }
+  Admin.findByPk(req.session.adminId).then(admin => {
+    if (!admin || admin.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Super admin access required' });
+    }
+    req.currentAdmin = admin;
+    next();
+  }).catch(err => {
+    res.status(500).json({ error: 'Server error' });
+  });
+}
+
+// Super admin: Approve (activate) an admin account
+router.post('/admins/:id/approve', requireSuperAdmin, async (req, res) => {
+  try {
+    const admin = await Admin.findByPk(req.params.id);
+    if (!admin) return res.status(404).json({ error: 'Admin not found' });
+    if (admin.isActive) return res.json({ success: true, message: 'Admin already active' });
+    await admin.update({ isActive: true });
+    res.json({ success: true, message: 'Admin approved and activated' });
+  } catch (err) {
+    console.error('Super admin approve error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Super admin: List all pending (inactive) admins
+router.get('/admins/pending', requireSuperAdmin, async (req, res) => {
+  try {
+    const pendingAdmins = await Admin.findAll({ where: { isActive: false } });
+    res.json({ pendingAdmins });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 const router = express.Router();
 const { Category, Ad, AnalyticsVisit, Product, Admin } = require('../models');
 const { translateToKannada, translateBatch } = require('../services/translator');

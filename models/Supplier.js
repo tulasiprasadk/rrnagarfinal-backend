@@ -2,7 +2,7 @@ module.exports = (sequelize, DataTypes) => {
   return sequelize.define('Supplier', {
     name: { type: DataTypes.STRING, allowNull: false },
     businessName: DataTypes.STRING,
-    email: DataTypes.STRING,
+    email: { type: DataTypes.STRING, allowNull: false, unique: true },
     phone: DataTypes.STRING,
     password: DataTypes.STRING, // hashed password
     otp: DataTypes.STRING,      // temporary OTP for login
