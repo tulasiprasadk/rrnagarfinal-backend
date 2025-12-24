@@ -10,8 +10,7 @@ module.exports = (sequelize, DataTypes) => {
       mobile: {
         type: DataTypes.STRING,
         allowNull: true,
-        unique: true,
-        defaultValue: null,
+        unique: true
       },
 
       username: {

@@ -1,311 +1,139 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const { Product, Supplier, Category, Ad, AnalyticsVisit, ProductSupplier } = require('../models');
-const multer = require('multer');
-const path = require('path');
-const { translateToKannada } = require('../services/translator');
+const { Product, Category } = require("../models");
+const { Op } = require("sequelize");
 
-// Configure multer for product images
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, 'uploads/products/'),
-  filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname)
-});
-const upload = multer({ storage });
-
-// GET /api/products?query=...
-router.get('/', async (req, res) => {
+/* =====================================================
+   GET /api/products
+   - Public: approved products only
+   - Supports categoryId + global search (q)
+===================================================== */
+router.get("/", async (req, res) => {
   try {
-    const { q, search, categoryId, variety, supplier } = req.query;
-    const supplierFilter = supplier === 'true';
-    const Op = require('sequelize').Op;
-    
-    let where = {};
-    
-    // Search query - checks title, variety, subVariety, description
-    const searchTerm = search || q;
-    if (searchTerm) {
+    const { categoryId, q } = req.query;
+
+    const where = {
+      status: "approved",
+    };
+
+    if (categoryId) {
+      where.CategoryId = Number(categoryId);
+    }
+
+    if (q) {
       where[Op.or] = [
-        { title: { [Op.like]: `%${searchTerm}%` } },
-        { variety: { [Op.like]: `%${searchTerm}%` } },
-        { subVariety: { [Op.like]: `%${searchTerm}%` } },
-        { description: { [Op.like]: `%${searchTerm}%` } }
+        { title: { [Op.iLike]: `%${q}%` } },
+        { variety: { [Op.iLike]: `%${q}%` } },
+        { subVariety: { [Op.iLike]: `%${q}%` } },
+        { description: { [Op.iLike]: `%${q}%` } },
       ];
     }
-    
-    // Filter by category
-    if (categoryId) {
-      where.CategoryId = parseInt(categoryId);
-    }
-    
-    // Filter by variety
-    if (variety) {
-      where.variety = variety;
-    }
-    
-    // If supplier filter is requested, add supplierId from session
-    if (supplierFilter && req.session.supplierId) {
-      where.supplierId = req.session.supplierId;
-    }
-    
-    const products = await Product.findAll({ 
-      where, 
+
+    const products = await Product.findAll({
+      where,
       include: [
-        { model: Supplier, as: 'suppliers', attributes: ['id', 'name', 'phone'], through: { attributes: [] } },
-        { model: Category, attributes: ['id', 'name', 'icon'] }
+        {
+          model: Category,
+          attributes: ["id", "name"],
+        },
       ],
-      order: [['createdAt', 'DESC']]
+      order: [["id", "DESC"]],
     });
-    
+
     res.json(products);
   } catch (err) {
-    console.error('Error fetching products:', err);
-    res.status(500).json({ error: err.message });
+    console.error("Error fetching products:", err);
+    res.status(500).json({ error: "Failed to fetch products" });
   }
 });
 
-// GET product by id
-router.get('/:id', async (req, res) => {
-  try {
-    const product = await Product.findByPk(req.params.id, { 
-      include: [
-        { model: Supplier, as: 'suppliers', attributes: ['id', 'name', 'phone'], through: { attributes: [] } },
-        { model: Category, attributes: ['id', 'name', 'icon'] }
-      ]
-    });
-    res.json(product);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+/* =====================================================
+   GET /api/products/health
+===================================================== */
+router.get("/health", (req, res) => {
+  res.json({ ok: true });
 });
 
-// GET ads
-router.get('/ads/all', async (req, res) => {
-  const ads = await Ad.findAll({ where: { active: true }, order: [['order', 'ASC']] });
-  res.json(ads);
-});
-
-// analytics: record visit
-router.post('/visit', async (req, res) => {
+/* =====================================================
+   POST /api/products/bulk
+   - Strict CategoryId enforcement
+   - Optional categoryName → categoryId mapping
+   - Rejects bad rows, inserts valid ones
+===================================================== */
+router.post("/bulk", async (req, res) => {
   try {
-    await AnalyticsVisit.create({
-      path: req.body.path,
-      referrer: req.body.referrer || '',
-      ip: req.ip,
-      userAgent: req.get('User-Agent') || ''
-    });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ ok: false });
-  }
-});
+    const { products } = req.body;
 
-// POST /api/products - Add new product (for suppliers)
-router.post('/', upload.single('image'), async (req, res) => {
-  try {
-    const { name, title, price, description, image_url, categoryId, variety, subVariety, unit, templateId } = req.body;
-    const supplierId = req.session.supplierId;
-    const adminId = req.session.adminId;
-
-    // Either supplier or admin must be authenticated
-    if (!supplierId && !adminId) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
-
-    const productData = {
-      title: title || name,
-      price: parseFloat(price),
-      description: description || '',
-      image: req.file ? req.file.path : (image_url || ''),
-      variety: variety || null,
-      subVariety: subVariety || null,
-      unit: unit || 'piece',
-      supplierId: supplierId || null,
-      CategoryId: categoryId || null,
-      isTemplate: adminId && !supplierId ? true : false // Admin creates templates
-    };
-
-    // If supplier is using a template, copy template details
-    if (templateId && supplierId) {
-      const template = await Product.findByPk(templateId);
-      if (template && template.isTemplate) {
-        productData.title = template.title;
-        productData.description = template.description;
-        productData.variety = variety || template.variety;
-        productData.subVariety = subVariety || template.subVariety;
-        productData.unit = template.unit;
-        productData.CategoryId = template.CategoryId || template.categoryId;
-        productData.image = req.file ? req.file.path : (template.image || '');
-        productData.isTemplate = false;
-      }
-    }
-
-    const product = await Product.create(productData);
-    
-    // Automatically translate to Kannada
-    try {
-      const titleKannada = await translateToKannada(product.title);
-      const descriptionKannada = product.description ? await translateToKannada(product.description) : '';
-      await product.update({ 
-        titleKannada, 
-        descriptionKannada 
-      });
-      console.log(`Auto-translated product ${product.id}: ${product.title} -> ${titleKannada}`);
-    } catch (translateErr) {
-      console.error('Auto-translation failed:', translateErr);
-      // Continue without translation - don't fail the product creation
-    }
-    
-    res.status(201).json({ message: 'Product added successfully', product });
-  } catch (err) {
-    console.error('Error adding product:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/products/bulk - Bulk upload products (admin only)
-router.post('/bulk', async (req, res) => {
-  try {
-    const adminId = req.session.adminId;
-    if (!adminId && !allowWithoutSession) {
-      return res.status(401).json({ error: 'Admin authentication required' });
-    }
-
-    const { products } = req.body; // Array of product objects
-    
     if (!Array.isArray(products) || products.length === 0) {
-      return res.status(400).json({ error: 'Products array is required' });
+      return res.status(400).json({ error: "products array required" });
     }
 
-    const createdProducts = [];
-    const errors = [];
+    // Load categories once (for name → id mapping)
+    const categories = await Category.findAll({
+      attributes: ["id", "name"],
+    });
 
-    for (let i = 0; i < products.length; i++) {
+    const categoryMap = {};
+    categories.forEach((c) => {
+      categoryMap[c.name.toLowerCase()] = c.id;
+    });
+
+    const validProducts = [];
+    const errorDetails = [];
+
+    products.forEach((p, index) => {
+      const row = index + 1;
+
       try {
-        const p = products[i];
-        const product = await Product.create({
-          title: p.title || p.name,
-          description: p.description || '',
-          price: parseFloat(p.price || 0),
+        if (!p.title) {
+          throw new Error("Missing title");
+        }
+
+        let categoryId = p.CategoryId;
+
+        // Fallback: resolve from categoryName if provided
+        if (!categoryId && p.categoryName) {
+          categoryId = categoryMap[p.categoryName.toLowerCase()];
+        }
+
+        if (!categoryId) {
+          throw new Error("Missing or invalid CategoryId");
+        }
+
+        validProducts.push({
+          title: p.title,
           variety: p.variety || null,
           subVariety: p.subVariety || null,
-          unit: p.unit || 'piece',
-          CategoryId: p.categoryId || null,
-          isTemplate: true,
-          supplierId: null
+          price: Number(p.price) || 0,
+          unit: p.unit || null,
+          description: p.description || null,
+          CategoryId: categoryId,
+          status: "approved", // auto-approve
         });
-        
-        // Auto-translate to Kannada
-        try {
-          const titleKannada = await translateToKannada(product.title);
-          const descriptionKannada = product.description ? await translateToKannada(product.description) : '';
-          await product.update({ titleKannada, descriptionKannada });
-        } catch (translateErr) {
-          console.error(`Translation failed for product ${i}:`, translateErr);
-        }
-        
-        createdProducts.push(product);
-      } catch (err) {
-        errors.push({ index: i, error: err.message, product: products[i] });
+      } catch (e) {
+        errorDetails.push(`Row ${row}: ${e.message}`);
       }
+    });
+
+    // Final safety check
+    if (validProducts.some((p) => !p.CategoryId)) {
+      return res.status(400).json({
+        error: "Validation failed: CategoryId cannot be null",
+      });
     }
+
+    // Bulk insert (fast + atomic)
+    await Product.bulkCreate(validProducts);
 
     res.json({
-      message: `Bulk upload completed. ${createdProducts.length} products created.`,
-      created: createdProducts.length,
-      errors: errors.length,
-      errorDetails: errors
+      success: true,
+      created: validProducts.length,
+      errors: errorDetails.length,
+      errorDetails,
     });
   } catch (err) {
-    console.error('Bulk upload error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET /api/products/templates - Get all product templates (for suppliers to choose from)
-router.get('/templates/all', async (req, res) => {
-  try {
-    const templates = await Product.findAll({
-      where: { isTemplate: true },
-      include: [Category],
-      order: [['title', 'ASC']]
-    });
-    res.json(templates);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// PUT /api/products/:id - Update product
-router.put('/:id', upload.single('image'), async (req, res) => {
-  try {
-    const { name, title, price, description, image_url, categoryId } = req.body;
-    const supplierId = req.session.supplierId;
-
-    if (!supplierId) {
-      return res.status(401).json({ error: 'Not authenticated as supplier' });
-    }
-
-    const product = await Product.findByPk(req.params.id);
-    if (!product) {
-      return res.status(404).json({ error: 'Product not found' });
-    }
-
-    if (product.supplierId !== supplierId) {
-      return res.status(403).json({ error: 'Not authorized to update this product' });
-    }
-
-    const updateData = {
-      title: title || name || product.title,
-      price: price ? parseFloat(price) : product.price,
-      description: description !== undefined ? description : product.description,
-      CategoryId: categoryId !== undefined ? categoryId : product.CategoryId
-    };
-
-    if (req.file) {
-      updateData.image = req.file.path;
-    } else if (image_url) {
-      updateData.image = image_url;
-    }
-
-    await product.update(updateData);
-    res.json({ message: 'Product updated successfully', product });
-  } catch (err) {
-    console.error('Error updating product:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// DELETE /api/products/:id - Delete product
-router.delete('/:id', async (req, res) => {
-  try {
-    const supplierId = req.session.supplierId;
-    const adminId = req.session.adminId || (req.headers['x-admin-token'] ? 1 : null);
-
-    // Admin UI currently works without explicit login token; allow delete if no session
-    const allowWithoutSession = !supplierId && !adminId;
-
-    const product = await Product.findByPk(req.params.id);
-    if (!product) {
-      return res.status(404).json({ error: 'Product not found' });
-    }
-
-    if (!adminId) {
-      const legacyMatch = product.supplierId === supplierId;
-      const junctionMatch = await ProductSupplier.findOne({
-        where: { productId: product.id, supplierId }
-      });
-
-      if (!legacyMatch && !junctionMatch) {
-        return res.status(403).json({ error: 'Not authorized to delete this product' });
-      }
-    }
-
-    await ProductSupplier.destroy({ where: { productId: product.id } });
-    await product.destroy();
-    res.json({ message: 'Product deleted successfully' });
-  } catch (err) {
-    console.error('Error deleting product:', err);
-    res.status(500).json({ error: err.message });
+    console.error("Bulk upload error:", err);
+    res.status(500).json({ error: "Bulk upload failed" });
   }
 });
 

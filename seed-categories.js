@@ -1,12 +1,12 @@
 const { sequelize, Category } = require('./models');
 
 const categories = [
-  { name: 'Flowers', icon: '🌸' },
-  { name: 'Crackers', icon: '🎆' },
-  { name: 'Vegetables', icon: '🥬' },
-  { name: 'Fruits', icon: '🍎' },
-  { name: 'Milk Products', icon: '🥛' },
   { name: 'Groceries', icon: '🛒' },
+  { name: 'Flowers', icon: '🌸' },
+  { name: 'Local Services', icon: '🛠️' },
+  { name: 'Pet Services', icon: '🐾' },
+  { name: 'Consultancy', icon: '💼' },
+  { name: 'Crackers', icon: '🎆' },
 ];
 
 async function seed() {

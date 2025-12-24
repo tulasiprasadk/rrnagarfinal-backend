@@ -12,6 +12,11 @@ module.exports = (sequelize, DataTypes) => {
     isService: { type: DataTypes.BOOLEAN, defaultValue: true },
     deliveryAvailable: { type: DataTypes.BOOLEAN, defaultValue: true },
     isTemplate: { type: DataTypes.BOOLEAN, defaultValue: false }, // Admin templates
-    metadata: DataTypes.JSON
+    metadata: DataTypes.JSON,
+    status: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: "pending", // or "approved" if you want all new products to be public by default
+    }
   });
 };

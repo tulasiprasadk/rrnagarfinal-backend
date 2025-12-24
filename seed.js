@@ -13,14 +13,23 @@ async function seed() {
     await Supplier.destroy({ where: {} });
     await Ad.destroy({ where: {} });
 
+
     // Load categories (seeded separately)
     const categories = await Category.findAll();
     const cat = (name) => categories.find(c => c.name === name)?.id;
-    if (!cat("Vegetables") || !cat("Groceries")) {
-      throw new Error("Categories not seeded. Run seed-categories.js first.");
+    const missing = [
+      "Groceries",
+      "Flowers",
+      "Local Services",
+      "Pet Services",
+      "Consultancy",
+      "Crackers"
+    ].filter(name => !cat(name));
+    if (missing.length) {
+      throw new Error(`Categories not seeded or missing: ${missing.join(", ")}`);
     }
 
-    // Create suppliers
+    // Create suppliers (for demonstration)
     const s1 = await Supplier.create({
       name: "FreshMart Groceries",
       phone: "9876543210",
@@ -28,44 +37,66 @@ async function seed() {
       description: "Your trusted grocery store",
     });
 
-    const s2 = await Supplier.create({
-      name: "RR Nagar Vegetables",
-      phone: "9988776655",
-      address: "Ideal Homes, RR Nagar",
-      description: "Fresh vegetables & fruits",
-    });
-
-    // Create products with category assignments (use CategoryId because association adds FK)
-    const p1 = await Product.create({
-      title: "Organic Tomatoes",
-      description: "Fresh organic tomatoes from local farms.",
-      price: 30,
-      unit: "kg",
-      image: "https://via.placeholder.com/300x200?text=Tomatoes",
-      CategoryId: cat("Vegetables")
-    });
-
-    const p2 = await Product.create({
-      title: "Aashirvaad Atta 5kg",
-      description: "Premium quality wheat flour.",
-      price: 220,
-      unit: "bag",
-      image: "https://via.placeholder.com/300x200?text=Atta+5kg",
-      CategoryId: cat("Groceries")
-    });
-
-    const p3 = await Product.create({
-      title: "Brown Bread",
-      description: "Freshly baked healthy brown bread.",
-      price: 45,
-      unit: "loaf",
-      image: "https://via.placeholder.com/300x200?text=Brown+Bread",
-      CategoryId: cat("Groceries")
-    });
-
-    // Link products to suppliers via many-to-many junction
-    // Link a single product to a supplier to avoid older DB unique constraints
-    await p1.addSupplier(s2);
+    // Create one approved product for each category
+    const demoProducts = [
+      {
+        title: "Basmati Rice 1kg",
+        description: "Premium long grain rice.",
+        price: 120,
+        unit: "kg",
+        image: "https://via.placeholder.com/300x200?text=Basmati+Rice",
+        CategoryId: cat("Groceries"),
+        status: "approved"
+      },
+      {
+        title: "Rose Bouquet",
+        description: "Fresh red roses.",
+        price: 250,
+        unit: "bouquet",
+        image: "https://via.placeholder.com/300x200?text=Rose+Bouquet",
+        CategoryId: cat("Flowers"),
+        status: "approved"
+      },
+      {
+        title: "Plumbing Service",
+        description: "Expert plumbing for your home.",
+        price: 500,
+        unit: "service",
+        image: "https://via.placeholder.com/300x200?text=Plumbing+Service",
+        CategoryId: cat("Local Services"),
+        status: "approved"
+      },
+      {
+        title: "Dog Walking",
+        description: "Daily dog walking service.",
+        price: 200,
+        unit: "walk",
+        image: "https://via.placeholder.com/300x200?text=Dog+Walking",
+        CategoryId: cat("Pet Services"),
+        status: "approved"
+      },
+      {
+        title: "Tax Consultation",
+        description: "Professional tax advice.",
+        price: 1500,
+        unit: "session",
+        image: "https://via.placeholder.com/300x200?text=Tax+Consultation",
+        CategoryId: cat("Consultancy"),
+        status: "approved"
+      },
+      {
+        title: "Diwali Crackers Box",
+        description: "Assorted crackers for Diwali.",
+        price: 800,
+        unit: "box",
+        image: "https://via.placeholder.com/300x200?text=Crackers+Box",
+        CategoryId: cat("Crackers"),
+        status: "approved"
+      }
+    ];
+    for (const prod of demoProducts) {
+      await Product.create(prod);
+    }
 
     // Create ads with required imageUrl and position fields
     await Ad.create({

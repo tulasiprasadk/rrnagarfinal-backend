@@ -23,9 +23,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-/* ======================================
-   MIDDLEWARE – Require Login
-====================================== */
+// MIDDLEWARE – Require Login
 function requireLogin(req, res, next) {
   if (!req.session.customerId) {
     return res.status(401).json({ error: "Not logged in" });
@@ -33,9 +31,7 @@ function requireLogin(req, res, next) {
   next();
 }
 
-/* ===========================================================
-   CREATE ORDER (Supports Address + Payment Fields)
-=========================================================== */
+// CREATE ORDER (Supports Address + Payment Fields)
 router.post("/create", requireLogin, async (req, res) => {
   try {
     const {
@@ -49,9 +45,7 @@ router.post("/create", requireLogin, async (req, res) => {
       paymentScreenshot
     } = req.body;
 
-    // ------------------------------
     // Validate product
-    // ------------------------------
     const product = await Product.findByPk(productId, {
       include: [{
         model: Supplier,
@@ -67,9 +61,7 @@ router.post("/create", requireLogin, async (req, res) => {
       return res.status(404).json({ error: "Product not found" });
     }
 
-    // ------------------------------
     // Get supplier from many-to-many relationship
-    // ------------------------------
     let supplier = null;
     let supplierId = null;
     
@@ -93,9 +85,7 @@ router.post("/create", requireLogin, async (req, res) => {
       console.warn(`No supplier assigned to product ${productId}`);
     }
 
-    // ------------------------------
     // Validate address
-    // ------------------------------
     let addressRecord = null;
     if (addressId) {
       addressRecord = await Address.findOne({
@@ -110,14 +100,10 @@ router.post("/create", requireLogin, async (req, res) => {
       }
     }
 
-    // ------------------------------
     // Calculate Total Price
-    // ------------------------------
     const totalAmount = Number(product.price) * Number(qty);
 
-    // ------------------------------
     // Create the Order
-    // ------------------------------
     const order = await Order.create({
       CustomerId: req.session.customerId,
       productId,
@@ -185,9 +171,7 @@ router.put("/:id/unr", requireLogin, async (req, res) => {
 });
 
 
-/* ===========================================================
-   LIST ORDERS FOR LOGGED-IN CUSTOMER
-=========================================================== */
+// LIST ORDERS FOR LOGGED-IN CUSTOMER
 router.get("/", requireLogin, async (req, res) => {
   try {
     const orders = await Order.findAll({
@@ -231,9 +215,7 @@ router.get("/customer/orders", requireLogin, async (req, res) => {
   }
 });
 
-/* ===========================================================
-   GET ORDER DETAILS (with Address + Product + Supplier)
-=========================================================== */
+// GET ORDER DETAILS (with Address + Product + Supplier)
 router.get("/:id", requireLogin, async (req, res) => {
   try {
     const order = await Order.findOne({
@@ -306,9 +288,7 @@ router.post("/submit-payment", upload.single("paymentScreenshot"), async (req, r
   }
 });
 
-/* ===========================================================
-   GET INVOICE (PDF Download)
-=========================================================== */
+// GET INVOICE (PDF Download)
 router.get("/:id/invoice", requireLogin, async (req, res) => {
   try {
     const order = await Order.findOne({
