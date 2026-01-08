@@ -7,7 +7,10 @@
     "start": "node api/index.js",
     "migrate": "node migrate.js",
     "dev": "nodemon index.js",
-    "ci": "node ci-check.js"
+    "ci": "node ci-check.js",
+    "lint": "eslint . --ext .js",
+    "lint:fix": "eslint . --ext .js --fix",
+    "test": "mocha --exit"
   },
   "dependencies": {
     "@vitalets/google-translate-api": "^9.2.1",
@@ -22,7 +25,6 @@
     "jsonwebtoken": "^9.0.0",
     "lodash": "^4.17.21",
     "mongoose": "^9.0.1",
-    "msg91": "^2.2.8",
     "multer": "^2.0.2",
     "nodemailer": "^7.0.11",
     "pg": "^8.16.3",
@@ -35,18 +37,9 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.11",
+    "chai": "^4.3.8",
     "eslint": "^8.50.0",
     "mocha": "^10.2.0",
-    "chai": "^4.3.8"
-  },
-  "scripts": {
-    "start": "node api/index.js",
-    "migrate": "node migrate.js",
-    "dev": "nodemon index.js",
-    "ci": "node ci-check.js",
-    "lint": "eslint . --ext .js",
-    "lint:fix": "eslint . --ext .js --fix",
-    "test": "mocha --exit"
+    "nodemon": "^3.1.11"
   }
 }
