@@ -47,27 +47,29 @@ async function createApp() {
   // lightweight health endpoint (fast, no DB init)
   app.get('/api/health', (req, res) => res.json({ ok: true, env: process.env.NODE_ENV || 'development' }));
 
-  // Session store: use Postgres-backed store when DATABASE_URL provided
-  try {
-    const sessionOptions = {
-      secret: process.env.SESSION_SECRET || 'your-secret-key',
-      resave: false,
-      saveUninitialized: false,
-      cookie: { secure: false },
-    };
+  // Session store: enabled only in non-production (serverless environments avoid session middleware)
+  if (process.env.NODE_ENV !== 'production') {
+    try {
+      const sessionOptions = {
+        secret: process.env.SESSION_SECRET || 'your-secret-key',
+        resave: false,
+        saveUninitialized: false,
+        cookie: { secure: false },
+      };
 
-    if (process.env.DATABASE_URL) {
-      const Pool = pg.Pool || pg.Client;
-      const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-      const PgSession = ConnectPgSimple(session);
-      sessionOptions.store = new PgSession({ pool, tableName: 'session' });
-      console.log('Using Postgres session store');
+      if (process.env.DATABASE_URL) {
+        const Pool = pg.Pool || pg.Client;
+        const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+        const PgSession = ConnectPgSimple(session);
+        sessionOptions.store = new PgSession({ pool, tableName: 'session' });
+        console.log('Using Postgres session store');
+      }
+
+      app.use(session(sessionOptions));
+    } catch (e) {
+      console.error('Session store init failed, falling back to MemoryStore:', e && e.message ? e.message : e);
+      app.use(session({ secret: process.env.SESSION_SECRET || 'your-secret-key', resave: false, saveUninitialized: false }));
     }
-
-    app.use(session(sessionOptions));
-  } catch (e) {
-    console.error('Session store init failed, falling back to MemoryStore:', e && e.message ? e.message : e);
-    app.use(session({ secret: process.env.SESSION_SECRET || 'your-secret-key', resave: false, saveUninitialized: false }));
   }
 
     // create a placeholder api router so we can mount routes asynchronously
