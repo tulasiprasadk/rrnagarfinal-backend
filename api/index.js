@@ -44,6 +44,9 @@ async function createApp() {
 
   app.use(bodyParser.json());
 
+  // lightweight health endpoint (fast, no DB init)
+  app.get('/api/health', (req, res) => res.json({ ok: true, env: process.env.NODE_ENV || 'development' }));
+
   // Session store: use Postgres-backed store when DATABASE_URL provided
   try {
     const sessionOptions = {
@@ -78,13 +81,17 @@ async function createApp() {
 
     try {
       const sequelize = require('../config/database');
-      // Auto-sync for development or when explicitly enabled
-      if (process.env.AUTO_SYNC === 'true' || process.env.NODE_ENV !== 'production') {
-        try {
+      // In production we avoid blocking startup with DB sync unless explicitly enabled.
+      const shouldSync = process.env.AUTO_SYNC === 'true' || process.env.NODE_ENV !== 'production';
+      if (shouldSync) {
+        // Run sync but don't block startup in production. Await in non-production for safety.
+        if (process.env.NODE_ENV === 'production' && process.env.AUTO_SYNC === 'true') {
+          sequelize.sync({ alter: true })
+            .then(() => console.log('Database synced (alter)'))
+            .catch((syncErr) => console.error('Database sync failed:', syncErr));
+        } else {
           await sequelize.sync({ alter: true });
           console.log('Database synced (alter)');
-        } catch (syncErr) {
-          console.error('Database sync failed:', syncErr);
         }
       }
     } catch (e) {
