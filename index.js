@@ -1,8 +1,8 @@
-import express from "express";
-import cors from "cors";
-import bodyParser from "body-parser";
-import routes from "./routes/index.js";
-import "./config/database.js"; // ensure DB connection
+const express = require('express');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+const routes = require('./routes');
+require('./config/database'); // ensure DB connection
 
 const app = express();
 

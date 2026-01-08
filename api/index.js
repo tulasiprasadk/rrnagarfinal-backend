@@ -1,8 +1,8 @@
-import express from "express";
-import serverless from "serverless-http";
-import cors from "cors";
-import bodyParser from "body-parser";
-import session from "express-session";
+const express = require('express');
+const serverless = require('serverless-http');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+const session = require('express-session');
 
 let cachedApp = null;
 let cachedLambdaHandler = null;
@@ -15,7 +15,7 @@ async function createApp() {
   // Common middleware
   app.use(
     cors({
-      origin: process.env.FRONTEND_URL || "http://localhost:5173",
+      origin: process.env.FRONTEND_URL || 'http://localhost:5173',
       credentials: true,
     })
   );
@@ -24,7 +24,7 @@ async function createApp() {
 
   app.use(
     session({
-      secret: process.env.SESSION_SECRET || "your-secret-key",
+      secret: process.env.SESSION_SECRET || 'your-secret-key',
       resave: false,
       saveUninitialized: false,
       cookie: { secure: false },
@@ -32,37 +32,43 @@ async function createApp() {
   );
 
   try {
-    // dynamic import so initialization errors are caught and return a helpful 500
-    const routesModule = await import("../routes/index.js");
-    // ensure DB config runs (may be commonjs or esm)
+    // require routes and DB config
+    let routesModule;
     try {
-      await import("../config/database.js");
+      routesModule = require('../routes');
     } catch (e) {
-      // best-effort: require fallback for CommonJS DB modules
-      try {
-        const { createRequire } = await import('module');
-        const require = createRequire(import.meta.url);
-        require('../config/database.js');
-      } catch (inner) {
-        console.error('Database init failed:', inner);
-      }
+      console.error('Failed to load routes:', e);
     }
 
-    app.use("/api", routesModule.default || routesModule);
+    try {
+      const sequelize = require('../config/database');
+      // Auto-sync for development or when explicitly enabled
+      if (process.env.AUTO_SYNC === 'true' || process.env.NODE_ENV !== 'production') {
+        try {
+          await sequelize.sync({ alter: true });
+          console.log('Database synced (alter)');
+        } catch (syncErr) {
+          console.error('Database sync failed:', syncErr);
+        }
+      }
+    } catch (e) {
+      console.error('Database init failed:', e);
+    }
+
+    if (routesModule) app.use('/api', routesModule.default || routesModule);
     cachedApp = app;
     return app;
   } catch (err) {
-    console.error("App initialization error:", err);
-    // fallback app which returns a 500 with details for any API request
+    console.error('App initialization error:', err);
     app.use((req, res) => {
-      res.status(500).json({ error: "Server initialization error", detail: String(err && err.message ? err.message : err) });
+      res.status(500).json({ error: 'Server initialization error', detail: String(err && err.message ? err.message : err) });
     });
     cachedApp = app;
     return app;
   }
 }
 
-export const handler = async (req, res) => {
+module.exports.handler = async (req, res) => {
   if (!cachedLambdaHandler) {
     const app = await createApp();
     cachedLambdaHandler = serverless(app);
@@ -71,7 +77,7 @@ export const handler = async (req, res) => {
 };
 
 // Local development server
-if (process.env.NODE_ENV !== "production") {
+if (process.env.NODE_ENV !== 'production') {
   (async () => {
     const app = await createApp();
     const PORT = process.env.PORT || 4000;

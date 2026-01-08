@@ -1,7 +1,7 @@
-import express from 'express';
-import bcrypt from 'bcrypt';
-import { Category, Ad, AnalyticsVisit, Product, Admin } from '../models/index.js';
-import { translateToKannada } from '../services/translator.js';
+const express = require('express');
+const bcrypt = require('bcrypt');
+const { Category, Ad, AnalyticsVisit, Product, Admin } = require('../models');
+const { translateToKannada } = require('../services/translator');
 const router = express.Router();
 
 /* ======================================================
@@ -226,4 +226,4 @@ router.get('/', (req, res) => {
   res.json({ message: 'Admin API running' });
 });
 
-export default router;
+module.exports = router;

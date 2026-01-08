@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const fs = require("fs");
 const multer = require("multer");
 const path = require("path");
 
@@ -7,21 +8,35 @@ const {
   Order, 
   Product, 
   Supplier, 
-  Address,
-  Notification 
+  Address
 } = require("../models");
+const { notifyAdmin } = require("../services/notificationService");
 
 // Configure multer for payment screenshots
+const uploadDir = path.join(__dirname, "..", "uploads", "payment");
+try {
+  fs.mkdirSync(uploadDir, { recursive: true });
+} catch (mkdirErr) {
+  console.error("Failed to ensure upload directory exists:", mkdirErr);
+}
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, "uploads/payment/");
+    cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
     const uniqueName = Date.now() + "-" + Math.round(Math.random() * 1e9) + path.extname(file.originalname);
     cb(null, uniqueName);
   },
 });
-const upload = multer({ storage });
+
+function imageFileFilter(req, file, cb) {
+  const allowed = ["image/png", "image/jpeg", "image/jpg"];
+  if (allowed.includes(file.mimetype)) return cb(null, true);
+  cb(new Error("Only JPEG/PNG images are allowed"));
+}
+
+const upload = multer({ storage, fileFilter: imageFileFilter, limits: { fileSize: 5 * 1024 * 1024 } });
 
 // MIDDLEWARE – Require Login
 function requireLogin(req, res, next) {
@@ -67,10 +82,17 @@ router.post("/create", requireLogin, async (req, res) => {
     
     // First check the many-to-many relationships
     if (product.suppliers && product.suppliers.length > 0) {
-      // Use the first active supplier
-      supplier = product.suppliers[0];
-      supplierId = supplier.id;
-      console.log(`Using supplier from junction table: ${supplier.name} (ID: ${supplierId})`);
+      // Prefer a supplier whose junction entry is active and has stock > 0
+      let found = product.suppliers.find((s) => s.ProductSupplier && s.ProductSupplier.isActive && s.ProductSupplier.stock > 0);
+      // Fallback to any active supplier
+      if (!found) {
+        found = product.suppliers.find((s) => s.ProductSupplier && s.ProductSupplier.isActive);
+      }
+      if (found) {
+        supplier = found;
+        supplierId = supplier.id;
+        console.log(`Using supplier from junction table: ${supplier.name} (ID: ${supplierId})`);
+      }
     } 
     // Fallback to old supplierId field for backward compatibility
     else if (product.supplierId) {
@@ -125,14 +147,13 @@ router.post("/create", requireLogin, async (req, res) => {
       status: "created"
     });
 
-    // Create admin notification for new order
+    // Notify admin about new order
     try {
-      await Notification.create({
-        type: "order_created",
-        title: "New Order Received",
-        message: `Order #${order.id} from ${customerName} (${customerPhone}) - ₹${totalAmount}`,
-        isRead: false
-      });
+      await notifyAdmin(
+        "order_created",
+        "New Order Received",
+        `Order #${order.id} from ${customerName} (${customerPhone}) - ₹${totalAmount}`
+      );
     } catch (notifErr) {
       console.error("Notification creation failed:", notifErr);
     }
@@ -270,12 +291,11 @@ router.post("/submit-payment", upload.single("paymentScreenshot"), async (req, r
 
     // notify admin to approve payment
     try {
-      await Notification.create({
-        type: "payment_submitted",
-        title: "Payment Submitted",
-        message: `Order #${order.id} payment submitted. UNR: ${order.paymentUNR}. Approve in Admin → Payments.`,
-        isRead: false
-      });
+      await notifyAdmin(
+        "payment_submitted",
+        "Payment Submitted",
+        `Order #${order.id} payment submitted. UNR: ${order.paymentUNR}. Approve in Admin → Payments.`
+      );
     } catch (notifErr) {
       console.error("Payment notification creation failed:", notifErr);
     }

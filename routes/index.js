@@ -1,14 +1,21 @@
-import express from "express";
-import products from "./products.js";
-import categories from "./categories.js";
-import ads from "./ads.js";
-import admin from "./admin.js";
+const express = require('express');
+const products = require('./products');
+const categories = require('./categories');
+const ads = require('./ads');
+const admin = require('./admin');
 
 const router = express.Router();
 
-router.use("/products", products);
-router.use("/categories", categories);
-router.use("/ads", ads);
-router.use("/admin", admin);
+router.use('/products', products);
+router.use('/categories', categories);
+router.use('/ads', ads);
+router.use('/admin', admin);
+// Simple health/db endpoints from `api/`
+try {
+	const dbTest = require('../api/db-test');
+	router.get('/db-test', dbTest);
+} catch (e) {
+	console.warn('db-test not available:', e && e.message ? e.message : e);
+}
 
-export default router;
+module.exports = router;
