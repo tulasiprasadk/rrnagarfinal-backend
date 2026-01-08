@@ -19,12 +19,27 @@ How to deploy on Render:
    - `DATABASE_URL` = (the value from your Postgres instance)
    - `PORT` = 10000 (Render sets process.env.PORT automatically; optional)
    - `JWT_SECRET` = choose a secret
-4. Deploy. The app uses Sequelize with `process.env.DATABASE_URL` and will create tables automatically on first run when `AUTO_SYNC=true` or in development (sequelize.sync()).
+4. Deploy. The app uses Sequelize with `process.env.DATABASE_URL`. Use migrations in production by running `node scripts/migrate.js` during deployment (the script uses `MIGRATE_ALTER=true` by default).
 
 Local fallback:
 - If you don't provide `DATABASE_URL`, the backend will use a local SQLite file (`database.sqlite`) for quick local testing.
-- To enable automatic schema sync on startup, set `AUTO_SYNC=true` in your environment.
+- To enable automatic schema sync on startup, set `AUTO_SYNC=true` in your environment (only for development).
+
 5. (Optional) Run `npm run migrate` or `node seed.js` from the shell on Render to seed sample data if desired.
+
+Docker & local production-like stack
+
+1. Start a local Postgres + backend using `docker-compose`:
+
+```bash
+docker-compose up --build
+```
+
+This composes a Postgres service with a persistent volume and mounts `./uploads` to the container so uploaded files persist locally.
+
+CI / Container registry
+
+- A GitHub Actions workflow `./github/workflows/docker-publish.yml` is provided to build and push the Docker image to GitHub Container Registry (GHCR). The workflow uses the built-in `GITHUB_TOKEN` and will publish `ghcr.io/<owner>/<repo>:latest` on pushes to `main`.
 
 Notes:
 - The backend already supports PostgreSQL via `process.env.DATABASE_URL`.

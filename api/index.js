@@ -3,6 +3,8 @@ const serverless = require('serverless-http');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const session = require('express-session');
+const pg = require('pg');
+const ConnectPgSimple = require('connect-pg-simple');
 
 let cachedApp = null;
 let cachedLambdaHandler = null;
@@ -22,14 +24,28 @@ async function createApp() {
 
   app.use(bodyParser.json());
 
-  app.use(
-    session({
+  // Session store: use Postgres-backed store when DATABASE_URL provided
+  try {
+    const sessionOptions = {
       secret: process.env.SESSION_SECRET || 'your-secret-key',
       resave: false,
       saveUninitialized: false,
       cookie: { secure: false },
-    })
-  );
+    };
+
+    if (process.env.DATABASE_URL) {
+      const Pool = pg.Pool || pg.Client;
+      const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+      const PgSession = ConnectPgSimple(session);
+      sessionOptions.store = new PgSession({ pool, tableName: 'session' });
+      console.log('Using Postgres session store');
+    }
+
+    app.use(session(sessionOptions));
+  } catch (e) {
+    console.error('Session store init failed, falling back to MemoryStore:', e && e.message ? e.message : e);
+    app.use(session({ secret: process.env.SESSION_SECRET || 'your-secret-key', resave: false, saveUninitialized: false }));
+  }
 
   try {
     // require routes and DB config
