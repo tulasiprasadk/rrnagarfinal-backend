@@ -70,14 +70,9 @@ async function createApp() {
     app.use(session({ secret: process.env.SESSION_SECRET || 'your-secret-key', resave: false, saveUninitialized: false }));
   }
 
-  try {
-    // require routes and DB config
-    let routesModule;
-    try {
-      routesModule = require('../routes');
-    } catch (e) {
-      console.error('Failed to load routes:', e);
-    }
+    // create a placeholder api router so we can mount routes asynchronously
+    const apiRouter = express.Router();
+    app.use('/api', apiRouter);
 
     try {
       const sequelize = require('../config/database');
@@ -98,7 +93,16 @@ async function createApp() {
       console.error('Database init failed:', e);
     }
 
-    if (routesModule) app.use('/api', routesModule.default || routesModule);
+    // Mount routes asynchronously to avoid blocking serverless cold-starts.
+    (async () => {
+      try {
+        const routesModule = require('../routes');
+        apiRouter.use(routesModule.default || routesModule);
+        console.log('API routes mounted');
+      } catch (e) {
+        console.error('Failed to mount routes:', e && e.message ? e.message : e);
+      }
+    })();
     cachedApp = app;
     return app;
   } catch (err) {
