@@ -11,11 +11,12 @@ const {
   Address
 } = require("../models");
 const { notifyAdmin } = require("../services/notificationService");
+const { uploadFile, ensureUploadsDir } = require('../services/storage');
 
 // Configure multer for payment screenshots
 const uploadDir = path.join(__dirname, "..", "uploads", "payment");
 try {
-  fs.mkdirSync(uploadDir, { recursive: true });
+  ensureUploadsDir(uploadDir);
 } catch (mkdirErr) {
   console.error("Failed to ensure upload directory exists:", mkdirErr);
 }
@@ -279,7 +280,23 @@ router.post("/submit-payment", upload.single("paymentScreenshot"), async (req, r
     if (!orderId) return res.status(400).json({ msg: "Missing orderId" });
 
     // update specific order info
-    const screenshotPath = `/uploads/payment/${req.file.filename}`;
+    const localPath = path.join(uploadDir, req.file.filename);
+    let screenshotPath = `/uploads/payment/${req.file.filename}`;
+
+    // If S3 is configured, upload and use S3 URL instead
+    try {
+      if (process.env.AWS_S3_BUCKET || process.env.S3_BUCKET) {
+        const destKey = `payment/${req.file.filename}`;
+        const s3Url = await uploadFile(localPath, destKey);
+        if (s3Url) {
+          screenshotPath = s3Url;
+          // remove local file after upload
+          try { fs.unlinkSync(localPath); } catch (e) { /* ignore unlink errors */ }
+        }
+      }
+    } catch (uploadErr) {
+      console.error('Upload to storage failed:', uploadErr);
+    }
 
     const order = await Order.findOne({ where: { id: orderId, CustomerId: customerId } });
     if (!order) return res.status(404).json({ msg: "Order not found" });

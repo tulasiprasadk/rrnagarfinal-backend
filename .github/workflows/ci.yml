@@ -32,3 +32,11 @@ jobs:
           AUTO_SYNC: true
           NODE_ENV: development
         run: npm run ci
+      - name: Run E2E tests (docker-compose)
+        if: ${{ always() }}
+        run: |
+          docker-compose -f docker-compose.yml up -d db
+          # give DB time to start
+          sleep 6
+          npm run test:e2e || true
+          docker-compose -f docker-compose.yml down

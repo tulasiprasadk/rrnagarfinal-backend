@@ -1,0 +1,51 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Upload Demo</title>
+  <style>body{font-family:system-ui,Segoe UI,Roboto;margin:40px}label{display:block;margin-top:8px}</style>
+</head>
+<body>
+  <h2>Upload Demo</h2>
+  <p>This page demonstrates two upload flows against the backend:</p>
+  <ol>
+    <li>Presign (direct upload to storage) — uses <code>/api/uploads/presign</code></li>
+    <li>Server upload — posts file to <code>/api/uploads/server</code></li>
+  </ol>
+
+  <label>Choose file <input id="file" type="file" /></label>
+  <label><input type="radio" name="mode" value="presign" checked /> Presign + PUT</label>
+  <label><input type="radio" name="mode" value="server" /> Server multipart POST</label>
+  <button id="upload">Upload</button>
+
+  <pre id="out"></pre>
+
+  <script>
+    const out = (v)=>{ document.getElementById('out').textContent = JSON.stringify(v, null, 2) }
+    document.getElementById('upload').addEventListener('click', async ()=>{
+      const f = document.getElementById('file').files[0];
+      if (!f) return out({ error: 'pick a file' });
+      const mode = document.querySelector('input[name=mode]:checked').value;
+      if (mode === 'presign') {
+        try {
+          const q = new URLSearchParams({ filename: f.name });
+          const res = await fetch('/api/uploads/presign?'+q.toString());
+          const json = await res.json();
+          if (!res.ok) return out({ presign: json });
+          // PUT file to signed url
+          const put = await fetch(json.url, { method: 'PUT', body: f, headers: { 'Content-Type': f.type || 'application/octet-stream' } });
+          out({ presign: json, putStatus: put.status });
+        } catch (err) { out({ error: String(err) }); }
+        return;
+      }
+
+      // server upload
+      try {
+        const fd = new FormData(); fd.append('file', f);
+        const r = await fetch('/api/uploads/server', { method: 'POST', body: fd });
+        const j = await r.json(); out({ server: j, status: r.status });
+      } catch (err) { out({ error: String(err) }); }
+    });
+  </script>
+</body>
+</html>

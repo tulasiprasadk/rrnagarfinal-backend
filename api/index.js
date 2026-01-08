@@ -14,6 +14,26 @@ async function createApp() {
 
   const app = express();
 
+  // Request logging
+  try {
+    const morgan = require('morgan');
+    app.use(morgan(process.env.LOG_FORMAT || 'combined'));
+  } catch (e) {
+    // ignore if morgan not available
+  }
+
+  // Basic structured logger
+  try {
+    const winston = require('winston');
+    const logger = winston.createLogger({
+      level: process.env.LOG_LEVEL || 'info',
+      transports: [new winston.transports.Console({ format: winston.format.simple() })],
+    });
+    app.locals.logger = logger;
+  } catch (e) {
+    // ignore
+  }
+
   // Common middleware
   app.use(
     cors({
@@ -91,6 +111,10 @@ module.exports.handler = async (req, res) => {
   }
   return cachedLambdaHandler(req, res);
 };
+
+// Vercel and some serverless platforms expect the module default to be the handler function.
+// Keep `module.exports.handler` for tests and also expose default for platforms.
+module.exports.default = module.exports.handler;
 
 // Local development server
 if (process.env.NODE_ENV !== 'production') {
