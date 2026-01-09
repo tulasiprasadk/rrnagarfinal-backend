@@ -74,13 +74,6 @@ async function createApp() {
     // at cold start can block serverless startup if DB or other services are slow.
     // We'll mount routes asynchronously to keep the handler responsive for health checks.
     let routesMounted = false;
-    try {
-      const routesModule = require('../routes');
-      app.use('/api', routesModule.default || routesModule);
-      routesMounted = true;
-    } catch (e) {
-      console.error('Failed to load routes at startup (will mount asynchronously):', e && e.message ? e.message : e);
-    }
 
     // Database sync: in production, do not block startup unless AUTO_SYNC === 'true'
     const shouldAutoSync = process.env.AUTO_SYNC === 'true' || process.env.NODE_ENV !== 'production';
@@ -106,7 +99,7 @@ async function createApp() {
 
     // In case routes couldn't be required earlier (cold-start), mount asynchronously
     (async () => {
-      if (routesMounted) return;
+      // attempt to mount routes asynchronously; this avoids blocking cold-start
       try {
         const routesModule = require('../routes');
         app.use('/api', routesModule.default || routesModule);
