@@ -144,4 +144,28 @@ router.post("/logout", (req, res) => {
 });
 
 module.exports = router;
+
+// Google OAuth routes for customers
+router.get('/google', passport.authenticate('google-customer', { scope: ['profile', 'email'] }));
+
+router.get(
+  '/google/callback',
+  passport.authenticate('google-customer', { failureRedirect: (process.env.FRONTEND_URL || '') + '/login', session: true }),
+  (req, res) => {
+    try {
+      const user = req.user || {};
+      req.session.customerId = user.id;
+      req.session.role = 'customer';
+
+      const status = user.status || 'approved';
+      if (status === 'approved') {
+        return res.redirect((process.env.FRONTEND_URL || '') + '/dashboard');
+      }
+      return res.redirect((process.env.FRONTEND_URL || '') + '/kyc-pending');
+    } catch (err) {
+      console.error('Google customer callback error', err);
+      return res.redirect((process.env.FRONTEND_URL || '') + '/login');
+    }
+  }
+);
 module.exports = router;

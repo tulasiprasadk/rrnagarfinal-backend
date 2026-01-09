@@ -10,6 +10,11 @@ router.use('/products', products);
 router.use('/categories', categories);
 router.use('/ads', ads);
 router.use('/admin', admin);
+// Auth routes for customers and suppliers
+const customerAuth = require('./customer/auth');
+const supplierAuth = require('./supplier/auth');
+router.use('/customer/auth', customerAuth);
+router.use('/supplier/auth', supplierAuth);
 const uploads = require('./uploads');
 router.use('/uploads', uploads);
 // Simple health/db endpoints from `api/`

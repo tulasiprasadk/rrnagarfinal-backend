@@ -5,6 +5,7 @@
 
 const express = require("express");
 const router = express.Router();
+const passport = require('passport');
 const { Supplier } = require("../../models");
 const { sendOTP } = require("../../services/emailService");
 
@@ -168,3 +169,28 @@ router.post("/logout", (req, res) => {
 });
 
 module.exports = router;
+
+// Google OAuth routes for suppliers
+router.get('/google', passport.authenticate('google-supplier', { scope: ['profile', 'email'] }));
+
+router.get(
+  '/google/callback',
+  passport.authenticate('google-supplier', { failureRedirect: (process.env.FRONTEND_URL || '') + '/login', session: true }),
+  (req, res) => {
+    try {
+      const user = req.user || {};
+      // store minimal session info
+      req.session.supplierId = user.id;
+      req.session.role = 'supplier';
+
+      const status = user.status || 'pending';
+      if (status === 'approved') {
+        return res.redirect((process.env.FRONTEND_URL || '') + '/supplier/dashboard');
+      }
+      return res.redirect((process.env.FRONTEND_URL || '') + '/supplier/kyc-pending');
+    } catch (err) {
+      console.error('Google supplier callback error', err);
+      return res.redirect((process.env.FRONTEND_URL || '') + '/login');
+    }
+  }
+);
