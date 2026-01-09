@@ -19,6 +19,7 @@ async function createApp() {
     const morgan = require('morgan');
     app.use(morgan(process.env.LOG_FORMAT || 'combined'));
   } catch (e) {
+    console.log('createApp: start');
     // ignore
   }
 
@@ -49,6 +50,7 @@ async function createApp() {
   // Session store (best-effort)
   try {
     const sessionOptions = {
+    console.log('createApp: health route registered');
       secret: process.env.SESSION_SECRET || 'your-secret-key',
       resave: false,
       saveUninitialized: false,
@@ -107,6 +109,7 @@ async function createApp() {
         console.log('Routes mounted asynchronously');
       } catch (e) {
         // If routes fail to load asynchronously, log and continue
+        console.log('createApp: skipping sync routes require');
         console.error('Deferred routes mount failed:', e && e.message ? e.message : e);
       }
     })();
