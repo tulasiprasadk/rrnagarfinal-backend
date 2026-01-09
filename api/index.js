@@ -68,6 +68,16 @@ async function createApp() {
     }
 
     app.use(session(sessionOptions));
+    // Initialize passport for OAuth flows
+    try {
+      const passport = require('passport');
+      const initPassport = require('../services/passport');
+      app.use(passport.initialize());
+      app.use(passport.session());
+      initPassport();
+    } catch (e) {
+      console.log('Passport init skipped:', e && e.message ? e.message : e);
+    }
   } catch (e) {
     console.error('Session store init failed, falling back to MemoryStore:', e && e.message ? e.message : e);
     app.use(session({ secret: process.env.SESSION_SECRET || 'your-secret-key', resave: false, saveUninitialized: false }));

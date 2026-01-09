@@ -6,6 +6,7 @@
 
 const express = require("express");
 const router = express.Router();
+const passport = require('passport');
 const { Customer } = require("../../models");
 const { sendOTP } = require("../../services/emailService");
 
@@ -143,3 +144,27 @@ router.post("/logout", (req, res) => {
 });
 
 module.exports = router;
+
+// Google OAuth routes
+// GET /api/auth/google -> redirect to Google
+router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+
+// GET /api/auth/google/callback -> handle callback
+router.get(
+  '/google/callback',
+  passport.authenticate('google', { failureRedirect: '/', session: true }),
+  (req, res) => {
+    try {
+      // Passport sets req.user to the Customer instance
+      if (req.user && req.user.id) {
+        req.session.customerId = req.user.id;
+      }
+      // redirect back to frontend or home
+      const redirectTo = process.env.FRONTEND_URL || '/';
+      res.redirect(redirectTo);
+    } catch (err) {
+      console.error('Google callback error', err);
+      res.redirect('/');
+    }
+  }
+);
