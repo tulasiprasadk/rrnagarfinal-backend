@@ -14,15 +14,15 @@ async function createApp() {
 
   const app = express();
 
-  // Request logging
+  // Request logging (optional)
   try {
     const morgan = require('morgan');
     app.use(morgan(process.env.LOG_FORMAT || 'combined'));
   } catch (e) {
-    // ignore if morgan not available
+    // ignore
   }
 
-  // Basic structured logger
+  // Structured logger (optional)
   try {
     const winston = require('winston');
     const logger = winston.createLogger({
@@ -34,77 +34,90 @@ async function createApp() {
     // ignore
   }
 
-  // Common middleware
+  // Standard middleware
   app.use(
-    cors({
-      origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-      credentials: true,
-    })
+    cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173', credentials: true })
   );
-
   app.use(bodyParser.json());
 
-  // lightweight health endpoint (fast, no DB init)
+  // Fast health endpoint for serverless probes
   app.get('/api/health', (req, res) => res.json({ ok: true, env: process.env.NODE_ENV || 'development' }));
 
-  // Session store: enabled only in non-production (serverless environments avoid session middleware)
-  if (process.env.NODE_ENV !== 'production') {
-    try {
-      const sessionOptions = {
-        secret: process.env.SESSION_SECRET || 'your-secret-key',
-        resave: false,
-        saveUninitialized: false,
-        cookie: { secure: false },
-      };
+  // also expose short /health for external checks
+  app.get('/health', (req, res) => res.json({ ok: true }));
 
-      if (process.env.DATABASE_URL) {
-        const Pool = pg.Pool || pg.Client;
-        const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-        const PgSession = ConnectPgSimple(session);
-        sessionOptions.store = new PgSession({ pool, tableName: 'session' });
-        console.log('Using Postgres session store');
-      }
+  // Session store (best-effort)
+  try {
+    const sessionOptions = {
+      secret: process.env.SESSION_SECRET || 'your-secret-key',
+      resave: false,
+      saveUninitialized: false,
+      cookie: { secure: false },
+    };
 
-      app.use(session(sessionOptions));
-    } catch (e) {
-      console.error('Session store init failed, falling back to MemoryStore:', e && e.message ? e.message : e);
-      app.use(session({ secret: process.env.SESSION_SECRET || 'your-secret-key', resave: false, saveUninitialized: false }));
+    if (process.env.DATABASE_URL) {
+      const Pool = pg.Pool || pg.Client;
+      const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+      const PgSession = ConnectPgSimple(session);
+      sessionOptions.store = new PgSession({ pool, tableName: 'session' });
+      console.log('Using Postgres session store');
     }
+
+    app.use(session(sessionOptions));
+  } catch (e) {
+    console.error('Session store init failed, falling back to MemoryStore:', e && e.message ? e.message : e);
+    app.use(session({ secret: process.env.SESSION_SECRET || 'your-secret-key', resave: false, saveUninitialized: false }));
   }
 
-    // create a placeholder api router so we can mount routes asynchronously
-    const apiRouter = express.Router();
-    app.use('/api', apiRouter);
-
+  try {
+    // Deferred mount of application routes. Attempting to require heavy route files
+    // at cold start can block serverless startup if DB or other services are slow.
+    // We'll mount routes asynchronously to keep the handler responsive for health checks.
+    let routesMounted = false;
     try {
-      const sequelize = require('../config/database');
-      // In production we avoid blocking startup with DB sync unless explicitly enabled.
-      const shouldSync = process.env.AUTO_SYNC === 'true' || process.env.NODE_ENV !== 'production';
-      if (shouldSync) {
-        // Run sync but don't block startup in production. Await in non-production for safety.
-        if (process.env.NODE_ENV === 'production' && process.env.AUTO_SYNC === 'true') {
+      const routesModule = require('../routes');
+      app.use('/api', routesModule.default || routesModule);
+      routesMounted = true;
+    } catch (e) {
+      console.error('Failed to load routes at startup (will mount asynchronously):', e && e.message ? e.message : e);
+    }
+
+    // Database sync: in production, do not block startup unless AUTO_SYNC === 'true'
+    const shouldAutoSync = process.env.AUTO_SYNC === 'true' || process.env.NODE_ENV !== 'production';
+    if (shouldAutoSync) {
+      try {
+        const sequelize = require('../config/database');
+        if (process.env.NODE_ENV === 'production' && process.env.AUTO_SYNC !== 'true') {
+          // skip blocking sync in production
+        } else if (process.env.NODE_ENV === 'production') {
+          // run async in production
           sequelize.sync({ alter: true })
             .then(() => console.log('Database synced (alter)'))
             .catch((syncErr) => console.error('Database sync failed:', syncErr));
         } else {
+          // development: await sync so tests and dev flow are consistent
           await sequelize.sync({ alter: true });
           console.log('Database synced (alter)');
         }
+      } catch (e) {
+        console.error('Database init failed:', e && e.message ? e.message : e);
       }
-    } catch (e) {
-      console.error('Database init failed:', e);
     }
 
-    // Mount routes asynchronously to avoid blocking serverless cold-starts.
+    // In case routes couldn't be required earlier (cold-start), mount asynchronously
     (async () => {
+      if (routesMounted) return;
       try {
         const routesModule = require('../routes');
-        apiRouter.use(routesModule.default || routesModule);
-        console.log('API routes mounted');
+        app.use('/api', routesModule.default || routesModule);
+        routesMounted = true;
+        console.log('Routes mounted asynchronously');
       } catch (e) {
-        console.error('Failed to mount routes:', e && e.message ? e.message : e);
+        // If routes fail to load asynchronously, log and continue
+        console.error('Deferred routes mount failed:', e && e.message ? e.message : e);
       }
     })();
+
     cachedApp = app;
     return app;
   } catch (err) {
@@ -125,8 +138,7 @@ module.exports.handler = async (req, res) => {
   return cachedLambdaHandler(req, res);
 };
 
-// Vercel and some serverless platforms expect the module default to be the handler function.
-// Keep `module.exports.handler` for tests and also expose default for platforms.
+// Also expose default for Vercel compatibility
 module.exports.default = module.exports.handler;
 
 // Local development server
@@ -139,3 +151,4 @@ if (process.env.NODE_ENV !== 'production') {
     });
   })();
 }
+
