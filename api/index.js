@@ -47,10 +47,12 @@ async function createApp() {
   // also expose short /health for external checks
   app.get('/health', (req, res) => res.json({ ok: true }));
 
+  // lightweight debug note that health routes are registered
+  console.log('createApp: health route registered');
+
   // Session store (best-effort)
   try {
     const sessionOptions = {
-    console.log('createApp: health route registered');
       secret: process.env.SESSION_SECRET || 'your-secret-key',
       resave: false,
       saveUninitialized: false,
